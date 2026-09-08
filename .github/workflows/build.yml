@@ -7,9 +7,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -27,9 +29,6 @@ jobs:
             libavformat-dev \
             libavcodec-dev \
             zlib1g-dev \
-            libgstreamer1.0 \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
             libffi-dev \
             libssl-dev \
             libbz2-dev \
@@ -39,8 +38,6 @@ jobs:
             libncursesw5-dev \
             libreadline-dev \
             liblzma-dev \
-            libdb5.3-dev \
-            libgdbm-dev \
             libexpat1-dev \
             swig \
             zip \
@@ -52,10 +49,12 @@ jobs:
             cmake \
             ninja-build
           pip install --upgrade pip buildozer Cython
+
       - name: Build APK
         working-directory: android
         run: |
           yes | buildozer -v android debug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
