@@ -111,70 +111,57 @@ def fmt_dist(m):
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("Tripper - Royal Enfield Style")
-        root.configure(bg="#111")
+        root.title("Tripper POD")
+        root.configure(bg="#000")
+        
+        # Estilo moderno
+        style_frame = {"bg": "#000"}
+        style_text = {"bg": "#000", "fg": "#00e5ff", "font": ("Segoe UI", 12)}
+        
+        # POD Display (Canvas para o visual circular)
+        self.canvas = tk.Canvas(root, width=300, height=300, bg="#000", highlightthickness=0)
+        self.canvas.pack(pady=20)
+        self.canvas.create_oval(20, 20, 280, 280, outline="#333", width=4)
+        self.canvas.create_oval(40, 40, 260, 260, outline="#00e5ff", width=2)
+        self.arrow_text = self.canvas.create_text(150, 150, text="⬆", fill="#00e5ff", font=("Segoe UI", 80))
+        self.dist_text = self.canvas.create_text(150, 230, text="--", fill="#fff", font=("Segoe UI", 24, "bold"))
+
+        # Info abaixo
+        self.street = tk.Label(root, text="Aguardando destino...", **style_text)
+        self.street.pack()
+        
+        self.status = tk.Label(root, text="Pronto", bg="#000", fg="#666", font=("Segoe UI", 10))
+        self.status.pack(pady=5)
+        
+        # Controles
+        ctrl = tk.Frame(root, bg="#000")
+        ctrl.pack(fill="x", padx=20, pady=10)
+        self.entry = tk.Entry(ctrl, bg="#111", fg="#fff", insertbackground="#fff", font=("Segoe UI", 12), relief="flat")
+        self.entry.pack(fill="x", pady=5)
+        self.go = tk.Button(ctrl, text="INICIAR ROTA", command=self.start, bg="#00e5ff", fg="#000", font=("Segoe UI", 10, "bold"), relief="flat")
+        self.go.pack(fill="x")
+
+        # Log escondido ou minimizado
+        self.log = tk.Text(root, height=5, bg="#000", fg="#008888", font=("Consolas", 8), state="disabled", relief="flat")
+        self.log.pack(fill="x", padx=10, pady=5)
+
+
         self.dest = None
         self.cur = None
         self.stop = threading.Event()
+        
+        # Tipo de GPS
+        conn = tk.Frame(root, bg="#000")
+        conn.pack(fill="x", padx=10)
+        self.mode = tk.StringVar(value="pc")
+        for m, label in [("cliente", "Conectar Celular"), ("pc", "GPS Local (PC)")]:
+            tk.Radiobutton(conn, text=label, variable=self.mode, value=m, bg="#000", fg="#555", 
+                          selectcolor="#000", activebackground="#000", activeforeground="#00e5ff",
+                          command=self._mode).pack(side="left", padx=5)
+        
+        self.addr = tk.Frame(root, bg="#000")
+        self.addr.pack()
 
-        f = dict(fg="#ccc", bg="#111", font=("Segoe UI", 10))
-        self.status = tk.Label(root, text="Ocioso", bg="#111", fg="#999",
-                               font=("Segoe UI", 12, "bold"))
-        self.status.pack(pady=(10, 4))
-
-        self.arrow = tk.Label(root, text="⬆", bg="#111", fg="#0e7",
-                              font=("Segoe UI", 72, "bold"))
-        self.arrow.pack(pady=4)
-
-        self.dist = tk.Label(root, text="--", bg="#111", fg="#fff",
-                             font=("Segoe UI", 30, "bold"))
-        self.dist.pack()
-
-        self.street = tk.Label(root, text="", bg="#111", fg="#aaa",
-                               font=("Segoe UI", 12))
-        self.street.pack()
-
-        info = tk.Frame(root, bg="#111")
-        info.pack(pady=6)
-        self.pos = tk.Label(info, text="GPS: --", **f)
-        self.pos.pack(side="left", padx=8)
-        self.eta = tk.Label(info, text="Faltam: --", **f)
-        self.eta.pack(side="left", padx=8)
-
-        bar = tk.Frame(root, bg="#111")
-        bar.pack(fill="x", padx=10, pady=6)
-        tk.Label(bar, text="Destino:", **f).pack(side="left")
-        self.entry = tk.Entry(bar, bg="#222", fg="#eee", insertbackground="#eee",
-                              width=30)
-        self.entry.pack(side="left", padx=6, fill="x", expand=True)
-        self.go = tk.Button(bar, text="Iniciar", command=self.start,
-                            bg="#0e7", fg="#000", activebackground="#0f8")
-        self.go.pack(side="left")
-
-        conn = tk.Frame(root, bg="#111")
-        conn.pack(fill="x", padx=10, pady=6)
-        tk.Label(conn, text="Tipo:", **f).pack(side="left")
-        self.mode = tk.StringVar(value="cliente")
-        tk.Radiobutton(conn, text="PC conecta no celular", variable=self.mode,
-                       value="cliente", bg="#111", fg="#ccc", selectcolor="#222",
-                       activebackground="#111",
-                       command=self._mode).pack(side="left", padx=4)
-        tk.Radiobutton(conn, text="Celular conecta no PC", variable=self.mode,
-                       value="servidor", bg="#111", fg="#ccc", selectcolor="#222",
-                       activebackground="#111",
-                       command=self._mode).pack(side="left", padx=4)
-        tk.Radiobutton(conn, text="GPS do próprio PC", variable=self.mode,
-                       value="pc", bg="#111", fg="#ccc", selectcolor="#222",
-                       activebackground="#111",
-                       command=self._mode).pack(side="left", padx=4)
-
-        self.addr = tk.Frame(root, bg="#111")
-        self.addr.pack(fill="x", padx=10, pady=4)
-        tk.Label(self.addr, text="IP + porta (celular)", **f).pack(side="left")
-        self.hostentry = tk.Entry(self.addr, bg="#222", fg="#eee",
-                                  insertbackground="#eee", width=22)
-        self.hostentry.insert(0, "192.168.1.18:8080")
-        self.hostentry.pack(side="left", padx=6)
 
         self.log = tk.Text(root, height=10, bg="#000", fg="#6c6",
                            font=("Consolas", 9), state="disabled")
@@ -409,13 +396,13 @@ class App:
             self.root.after(0, self._update_view, turn, d, name, remaining)
 
     def _update_view(self, turn, d, name, remaining):
-        self.arrow.configure(text=ARROWS.get(turn, "➡"))
-        self.dist.configure(text=fmt_dist(d))
-        self.street.configure(text=name[:30] if name else "")
-        self.pos.configure(text=f"GPS: {self.cur[0]:.5f},{self.cur[1]:.5f}")
-        self.eta.configure(text=f"Faltam: {fmt_dist(remaining)}")
+        arrow_sym = ARROWS.get(turn, "➡")
+        self.canvas.itemconfig(self.arrow_text, text=arrow_sym)
+        self.canvas.itemconfig(self.dist_text, text=fmt_dist(d))
+        self.street.configure(text=name[:30] if name else "Em rota...")
+        self.status.configure(text=f"Faltam: {fmt_dist(remaining)} | GPS OK")
         if turn == "arrive":
-            self.set_status("Destino alcançado!", "#0e7")
+            self.set_status("Destino alcançado!", "#00e5ff")
 
 
 def main():
