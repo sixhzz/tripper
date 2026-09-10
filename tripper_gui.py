@@ -185,29 +185,36 @@ class App:
             self.addr.pack_forget()
 
     def logmsg(self, msg):
-        self.log.configure(state="normal")
-        self.log.insert("end", time.strftime("[%H:%M:%S] ") + msg + "\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
+        def _log():
+            self.log.configure(state="normal")
+            self.log.insert("end", time.strftime("[%H:%M:%S] ") + msg + "\n")
+            self.log.see("end")
+            self.log.configure(state="disabled")
+        self.root.after(0, _log)
 
     def set_status(self, txt, color="#0e7"):
-        self.status.configure(text=txt, fg=color)
+        self.root.after(0, lambda: self.status.configure(text=txt, fg=color))
 
     def start(self):
-        dest = self.entry.get().strip()
-        if not dest:
+        dest_query = self.entry.get().strip()
+        if not dest_query:
             self.logmsg("Digite um destino.")
             return
-        self.logmsg(f"Geocodificando destino: {dest}")
+        self.stop.clear()
+        self.go.configure(state="disabled")
+        threading.Thread(target=self._start_async, args=(dest_query,), daemon=True).start()
+
+    def _start_async(self, query):
+        self.logmsg(f"Geocodificando destino: {query}")
         try:
-            self.dest = geocode(dest)
+            self.dest = geocode(query)
+            self.logmsg(f"Destino resolvido: {self.dest[0]:.5f},{self.dest[1]:.5f}")
+            self._spawn_gps()
+            threading.Thread(target=self._loop, daemon=True).start()
         except Exception as e:
             self.logmsg(f"Erro geocoding: {e}")
-            return
-        self.logmsg(f"Destino resolvido: {self.dest[0]:.5f},{self.dest[1]:.5f}")
-        self.stop.clear()
-        self._spawn_gps()
-        threading.Thread(target=self._loop, daemon=True).start()
+        finally:
+            self.root.after(0, lambda: self.go.configure(state="normal"))
 
     def _spawn_gps(self):
         if self.mode.get() == "cliente":
@@ -231,35 +238,50 @@ class App:
         import subprocess
         self.logmsg("Iniciando GPS nativo do Windows...")
         self.set_status("Aguardando GPS do PC...", "#e90")
-        while not self.stop.is_set():
+        ps_script = (
+            "Add-Type -AssemblyName System.Device; "
+            "$w = New-Object System.Device.Location.GeoCoordinateWatcher; "
+            "$w.Start(); "
+            "while ($true) { "
+            "  if ($w.Status -eq 'Ready') { "
+            "    $loc = $w.Position.Location; "
+            "    if (-not $loc.IsUnknown) { "
+            "      [PSCustomObject]@{Lat=$loc.Latitude; Lon=$loc.Longitude} | ConvertTo-Json -Compress "
+            "    } "
+            "  } "
+            "  Start-Sleep -Seconds 3; "
+            "}"
+        )
+        try:
+            self.pc_proc = subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            while not self.stop.is_set():
+                line = self.pc_proc.stdout.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if line:
+                    try:
+                        data = json.loads(line)
+                        if "Lat" in data and "Lon" in data:
+                            lat, lon = float(data["Lat"]), float(data["Lon"])
+                            self.cur = (lat, lon)
+                            self.set_status("GPS do PC conectado", "#0e7")
+                            self.logmsg(f"GPS PC: {lat:.5f}, {lon:.5f}")
+                    except Exception:
+                        pass
+        except Exception as e:
+            self.logmsg(f"Erro GPS PC: {e}")
+        finally:
             try:
-                cmd = [
-                    "powershell", "-NoProfile", "-Command",
-                    "Add-Type -AssemblyName System.Device; "
-                    "$w = New-Object System.Device.Location.GeoCoordinateWatcher; "
-                    "$w.Start(); "
-                    "$timeout = 10; "
-                    "while($w.Status -ne 'Ready' -and $timeout -gt 0) { Start-Sleep -s 1; $timeout-- }; "
-                    "if($w.Status -eq 'Ready') { "
-                    "  $loc = $w.Position.Location; "
-                    "  if (-not $loc.IsUnknown) { "
-                    "    [PSCustomObject]@{Lat=$loc.Latitude; Lon=$loc.Longitude} | ConvertTo-Json -Compress "
-                    "  } "
-                    "}"
-                ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-                if res.returncode == 0 and res.stdout.strip():
-                    data = json.loads(res.stdout.strip())
-                    if "Lat" in data and "Lon" in data:
-                        lat, lon = float(data["Lat"]), float(data["Lon"])
-                        self.cur = (lat, lon)
-                        self.set_status("GPS do PC conectado", "#0e7")
-                        self.logmsg(f"GPS PC: {lat:.5f}, {lon:.5f}")
-                else:
-                    self.logmsg("Aviso: Localização do Windows indisponível ou desativada.")
-            except Exception as e:
-                self.logmsg(f"Erro GPS PC: {e}")
-            time.sleep(5)
+                if hasattr(self, 'pc_proc') and self.pc_proc:
+                    self.pc_proc.terminate()
+            except Exception:
+                pass
 
     def _client(self, host, port):
         self.logmsg(f"Tentando conectar no celular {host}:{port} ...")
@@ -344,7 +366,7 @@ class App:
 
     def _loop(self):
         while not self.stop.is_set():
-            time.sleep(1)
+            time.sleep(5)
             if self.dest is None or self.cur is None:
                 self.set_status("Aguardando GPS...", "#e90")
                 continue
