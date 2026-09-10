@@ -9,6 +9,7 @@ Uso:
     py tripper_gui.py
 """
 import json
+import math
 import os
 import socket
 import sys
@@ -108,90 +109,161 @@ def fmt_dist(m):
     return f"{int(m)} m"
 
 
+CANVAS_SIZE = 340
+CANVAS_CENTER = CANVAS_SIZE // 2
+
+
 class App:
+    BG = "#0a0e14"
+    CARD = "#151b24"
+    ACCENT = "#00e5ff"
+    TEXT = "#e6edf3"
+    MUTED = "#6e7681"
+    SUCCESS = "#00ff88"
+
     def __init__(self, root):
         self.root = root
-        root.title("Tripper POD")
-        root.configure(bg="#000")
-        
-        # Estilo moderno
-        style_frame = {"bg": "#000"}
-        style_text = {"bg": "#000", "fg": "#00e5ff", "font": ("Segoe UI", 12)}
-        
-        # POD Display (Canvas para o visual circular)
-        self.canvas = tk.Canvas(root, width=300, height=300, bg="#000", highlightthickness=0)
-        self.canvas.pack(pady=20)
-        self.canvas.create_oval(20, 20, 280, 280, outline="#333", width=4)
-        self.canvas.create_oval(40, 40, 260, 260, outline="#00e5ff", width=2)
-        self.arrow_text = self.canvas.create_text(150, 150, text="⬆", fill="#00e5ff", font=("Segoe UI", 80))
-        self.dist_text = self.canvas.create_text(150, 230, text="--", fill="#fff", font=("Segoe UI", 24, "bold"))
-
-        # Info abaixo
-        self.street = tk.Label(root, text="Aguardando destino...", **style_text)
-        self.street.pack()
-        
-        self.status = tk.Label(root, text="Pronto", bg="#000", fg="#666", font=("Segoe UI", 10))
-        self.status.pack(pady=5)
-        
-        # Controles
-        ctrl = tk.Frame(root, bg="#000")
-        ctrl.pack(fill="x", padx=20, pady=10)
-        self.entry = tk.Entry(ctrl, bg="#111", fg="#fff", insertbackground="#fff", font=("Segoe UI", 12), relief="flat")
-        self.entry.pack(fill="x", pady=5)
-        self.go = tk.Button(ctrl, text="INICIAR ROTA", command=self.start, bg="#00e5ff", fg="#000", font=("Segoe UI", 10, "bold"), relief="flat")
-        self.go.pack(fill="x")
-
-        # Log escondido ou minimizado
-        self.log = tk.Text(root, height=5, bg="#000", fg="#008888", font=("Consolas", 8), state="disabled", relief="flat")
-        self.log.pack(fill="x", padx=10, pady=5)
-
+        root.title("TRIPPER")
+        root.configure(bg=self.BG)
+        root.geometry("420x640")
+        root.resizable(False, False)
 
         self.dest = None
         self.cur = None
         self.stop = threading.Event()
-        
-        # Tipo de GPS
-        conn = tk.Frame(root, bg="#000")
-        conn.pack(fill="x", padx=10)
-        self.mode = tk.StringVar(value="pc")
-        for m, label in [("cliente", "Conectar Celular"), ("pc", "GPS Local (PC)")]:
-            tk.Radiobutton(conn, text=label, variable=self.mode, value=m, bg="#000", fg="#555", 
-                          selectcolor="#000", activebackground="#000", activeforeground="#00e5ff",
-                          command=self._mode).pack(side="left", padx=5)
-        
-        self.addr = tk.Frame(root, bg="#000")
-        self.addr.pack()
 
-
-        self.log = tk.Text(root, height=10, bg="#000", fg="#6c6",
-                           font=("Consolas", 9), state="disabled")
-        self.log.pack(fill="both", expand=True, padx=10, pady=8)
+        self._build_gauge()
+        self._build_info()
+        self._build_controls()
+        self._build_log()
 
         self._mode()
 
+    def _build_gauge(self):
+        frame = tk.Frame(self.root, bg=self.BG)
+        frame.pack(pady=24)
+
+        self.canvas = tk.Canvas(frame, width=CANVAS_SIZE, height=CANVAS_SIZE,
+                                bg=self.BG, highlightthickness=0)
+        self.canvas.pack()
+
+        c = CANVAS_CENTER
+        r1 = c - 12
+        r2 = c - 26
+
+        self.canvas.create_oval(c-r1, c-r1, c+r1, c+r1,
+                                outline="#1a222e", width=6)
+        self.canvas.create_oval(c-r2, c-r2, c+r2, c+r2,
+                                outline=self.ACCENT, width=2)
+
+        self.tick_els = []
+        for a in range(0, 360, 30):
+            rad = math.radians(a)
+            x0 = c + (r1-8) * math.sin(rad)
+            y0 = c - (r1-8) * math.cos(rad)
+            x1 = c + (r1-18) * math.sin(rad)
+            y1 = c - (r1-18) * math.cos(rad)
+            self.tick_els.append(self.canvas.create_line(x0, y0, x1, y1,
+                                                         fill="#222", width=3))
+
+        self.arrow_text = self.canvas.create_text(c, c, text="⬆",
+                                                  fill=self.ACCENT,
+                                                  font=("Segoe UI", 64, "bold"))
+        self.dist_text = self.canvas.create_text(c, c + 72, text="--",
+                                                 fill="#ffffff",
+                                                 font=("Segoe UI", 28, "bold"))
+        self.unit_text = self.canvas.create_text(c, c + 110, text="",
+                                                 fill="#555",
+                                                 font=("Segoe UI", 12))
+
+    def _build_info(self):
+        frame = tk.Frame(self.root, bg=self.BG)
+        frame.pack(fill="x", padx=24, pady=4)
+        self.street = tk.Label(frame, text="Digite um destino para começar",
+                               bg=self.BG, fg=self.TEXT,
+                               font=("Segoe UI", 13),
+                               anchor="w")
+        self.street.pack(fill="x")
+
+        row = tk.Frame(self.root, bg=self.BG)
+        row.pack(fill="x", padx=24, pady=2)
+        self.status = tk.Label(row, text="Pronto", bg=self.BG,
+                               fg=self.MUTED, font=("Segoe UI", 10))
+        self.status.pack(side="left")
+
+        self.pos = tk.Label(row, text="GPS: --", bg=self.BG,
+                            fg=self.MUTED, font=("Segoe UI", 10))
+        self.pos.pack(side="right")
+
+    def _build_controls(self):
+        frame = tk.Frame(self.root, bg=self.BG)
+        frame.pack(fill="x", padx=24, pady=14)
+
+        self.entry = tk.Entry(frame, bg=self.CARD, fg=self.TEXT,
+                              insertbackground=self.TEXT,
+                              font=("Segoe UI", 12), relief="flat",
+                              bd=8)
+        self.entry.pack(fill="x", pady=6)
+        self.entry.insert(0, "Digite o destino")
+        self.entry.bind("<FocusIn>", lambda _: self.entry.delete(0, "end")
+                        if self.entry.get() == "Digite o destino" else None)
+
+        self.go = tk.Button(frame, text="INICIAR ROTA", command=self.start,
+                            bg=self.ACCENT, fg="#000",
+                            font=("Segoe UI", 11, "bold"),
+                            relief="flat", pady=8, cursor="hand2",
+                            activebackground="#33ddff")
+        self.go.pack(fill="x", pady=4)
+
+        mode_row = tk.Frame(self.root, bg=self.BG)
+        mode_row.pack(pady=4)
+
+        self.mode = tk.StringVar(value="pc")
+        for m, label in [("pc", "GPS deste PC"),
+                         ("cliente", "Celular → PC"),
+                         ("servidor", "PC → Celular")]:
+            tk.Radiobutton(mode_row, text=label, variable=self.mode, value=m,
+                           bg=self.BG, fg=self.MUTED, selectcolor=self.BG,
+                           activebackground=self.BG,
+                           activeforeground=self.ACCENT,
+                           font=("Segoe UI", 9),
+                           command=self._mode).pack(side="left", padx=8)
+
+        self.addr = tk.Frame(self.root, bg=self.BG)
+        self.addr.pack(pady=6)
+
+    def _build_log(self):
+        frame = tk.Frame(self.root, bg=self.BG)
+        frame.pack(fill="both", expand=True, padx=24, pady=(0, 12))
+        self.log = tk.Text(frame, height=5, bg=self.CARD, fg="#1a5560",
+                           font=("Consolas", 8), state="disabled",
+                           relief="flat", bd=6)
+        self.log.pack(fill="both", expand=True)
+
     def _mode(self):
         for w in self.addr.winfo_children():
-            w.pack_forget()
-        if self.mode.get() == "cliente":
-            self.addr.pack()
-            tk.Label(self.addr, text="IP + porta do celular",
-                     **dict(fg="#ccc", bg="#111")).pack(side="left")
-            e = tk.Entry(self.addr, bg="#222", fg="#eee",
-                         insertbackground="#eee", width=22)
+            w.destroy()
+        mode = self.mode.get()
+        if mode == "cliente":
+            tk.Label(self.addr, text="IP + porta do celular:",
+                     bg=self.BG, fg=self.MUTED,
+                     font=("Segoe UI", 9)).pack(side="left")
+            e = tk.Entry(self.addr, bg=self.CARD, fg=self.TEXT,
+                         insertbackground=self.TEXT, width=22,
+                         font=("Segoe UI", 10), relief="flat", bd=4)
             e.insert(0, "192.168.1.18:8080")
             e.pack(side="left", padx=6)
             self.hostentry = e
-        elif self.mode.get() == "servidor":
-            self.addr.pack()
-            tk.Label(self.addr, text="Porta p/ celular conectar",
-                     **dict(fg="#ccc", bg="#111")).pack(side="left")
-            e = tk.Entry(self.addr, bg="#222", fg="#eee",
-                         insertbackground="#eee", width=10)
+        elif mode == "servidor":
+            tk.Label(self.addr, text="Porta p/ celular conectar:",
+                     bg=self.BG, fg=self.MUTED,
+                     font=("Segoe UI", 9)).pack(side="left")
+            e = tk.Entry(self.addr, bg=self.CARD, fg=self.TEXT,
+                         insertbackground=self.TEXT, width=8,
+                         font=("Segoe UI", 10), relief="flat", bd=4)
             e.insert(0, "8080")
             e.pack(side="left", padx=6)
             self.hostentry = e
-        else:
-            self.addr.pack_forget()
 
     def logmsg(self, msg):
         def _log():
@@ -398,11 +470,23 @@ class App:
     def _update_view(self, turn, d, name, remaining):
         arrow_sym = ARROWS.get(turn, "➡")
         self.canvas.itemconfig(self.arrow_text, text=arrow_sym)
-        self.canvas.itemconfig(self.dist_text, text=fmt_dist(d))
-        self.street.configure(text=name[:30] if name else "Em rota...")
-        self.status.configure(text=f"Faltam: {fmt_dist(remaining)} | GPS OK")
+
+        dist_val = fmt_dist(d)
+        if " " in dist_val:
+            val, unit = dist_val.split(" ", 1)
+            self.canvas.itemconfig(self.dist_text, text=val)
+            self.canvas.itemconfig(self.unit_text, text=unit.upper())
+        else:
+            self.canvas.itemconfig(self.dist_text, text=dist_val)
+            self.canvas.itemconfig(self.unit_text, text="")
+
+        self.street.configure(text=name[:35] if name else "Siga em frente")
+        self.status.configure(text=f"Faltam {fmt_dist(remaining)}", fg=self.SUCCESS)
+        if self.cur:
+            self.pos.configure(text=f"GPS: {self.cur[0]:.5f}, {self.cur[1]:.5f}")
+
         if turn == "arrive":
-            self.set_status("Destino alcançado!", "#00e5ff")
+            self.set_status("DESTINO ALCANÇADO!", self.SUCCESS)
 
 
 def main():
