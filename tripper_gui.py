@@ -9,6 +9,7 @@ Uso:
     py tripper_gui.py
 """
 import json
+import os
 import socket
 import sys
 import threading
@@ -19,6 +20,13 @@ import tkinter as tk
 
 OSRM = "https://router.project-osrm.org/route/v1/driving/"
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
+CACHE_DIR = os.path.join(os.path.expanduser("~"), ".tripper_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+
+def _cache_path(a, b):
+    key = f"{a[0]:.5f},{a[1]:.5f}_{b[0]:.5f},{b[1]:.5f}".replace(".", "").replace("-", "n")
+    return os.path.join(CACHE_DIR, f"route_{key}.json")
 
 ARROWS = {
     "left": "⬅", "slight left": "↖", "sharp left": "⤴",
@@ -42,6 +50,15 @@ def geocode(query):
 
 
 def route_calc(a, b):
+    cache_file = _cache_path(a, b)
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data["steps"]
+        except Exception:
+            pass
+
     pts = f"{a[1]},{a[0]};{b[1]},{b[0]}"
     data = _get(OSRM + pts + "?overview=false&steps=true")
     if data.get("code") != "Ok":
@@ -57,6 +74,11 @@ def route_calc(a, b):
                 s.get("distance", 0.0),
                 s.get("name", "") or "continue",
             ))
+    try:
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump({"steps": steps, "origin": a, "dest": b}, f)
+    except Exception:
+        pass
     return steps
 
 
