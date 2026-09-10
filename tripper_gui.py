@@ -240,16 +240,16 @@ class App:
         self.set_status("Aguardando GPS do PC...", "#e90")
         ps_script = (
             "Add-Type -AssemblyName System.Device; "
-            "$w = New-Object System.Device.Location.GeoCoordinateWatcher; "
-            "$w.Start(); "
+            "$w = New-Object System.Device.Location.GeoCoordinateWatcher('High'); "
+            "$w.TryStart($false, [TimeSpan]::FromMilliseconds(100)); "
             "while ($true) { "
             "  if ($w.Status -eq 'Ready') { "
             "    $loc = $w.Position.Location; "
-            "    if (-not $loc.IsUnknown) { "
-            "      [PSCustomObject]@{Lat=$loc.Latitude; Lon=$loc.Longitude} | ConvertTo-Json -Compress "
+            "    if (-not $loc.IsUnknown -and $loc.HorizontalAccuracy -gt 0) { "
+            "      [PSCustomObject]@{Lat=$loc.Latitude; Lon=$loc.Longitude; Acc=$loc.HorizontalAccuracy} | ConvertTo-Json -Compress "
             "    } "
             "  } "
-            "  Start-Sleep -Seconds 3; "
+            "  Start-Sleep -Seconds 2; "
             "}"
         )
         try:
@@ -269,9 +269,14 @@ class App:
                         data = json.loads(line)
                         if "Lat" in data and "Lon" in data:
                             lat, lon = float(data["Lat"]), float(data["Lon"])
+                            acc = data.get("Acc", 0)
                             self.cur = (lat, lon)
-                            self.set_status("GPS do PC conectado", "#0e7")
-                            self.logmsg(f"GPS PC: {lat:.5f}, {lon:.5f}")
+                            if acc:
+                                self.set_status(f"GPS PC (±{acc:.0f}m)", "#0e7")
+                                self.logmsg(f"GPS PC: {lat:.5f},{lon:.5f} ±{acc:.0f}m")
+                            else:
+                                self.set_status("GPS do PC conectado", "#0e7")
+                                self.logmsg(f"GPS PC: {lat:.5f}, {lon:.5f}")
                     except Exception:
                         pass
         except Exception as e:
