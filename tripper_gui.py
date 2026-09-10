@@ -141,6 +141,10 @@ class App:
                        value="servidor", bg="#111", fg="#ccc", selectcolor="#222",
                        activebackground="#111",
                        command=self._mode).pack(side="left", padx=4)
+        tk.Radiobutton(conn, text="GPS do próprio PC", variable=self.mode,
+                       value="pc", bg="#111", fg="#ccc", selectcolor="#222",
+                       activebackground="#111",
+                       command=self._mode).pack(side="left", padx=4)
 
         self.addr = tk.Frame(root, bg="#111")
         self.addr.pack(fill="x", padx=10, pady=4)
@@ -159,8 +163,8 @@ class App:
     def _mode(self):
         for w in self.addr.winfo_children():
             w.pack_forget()
-        self.addr.pack()
         if self.mode.get() == "cliente":
+            self.addr.pack()
             tk.Label(self.addr, text="IP + porta do celular",
                      **dict(fg="#ccc", bg="#111")).pack(side="left")
             e = tk.Entry(self.addr, bg="#222", fg="#eee",
@@ -168,7 +172,8 @@ class App:
             e.insert(0, "192.168.1.18:8080")
             e.pack(side="left", padx=6)
             self.hostentry = e
-        else:
+        elif self.mode.get() == "servidor":
+            self.addr.pack()
             tk.Label(self.addr, text="Porta p/ celular conectar",
                      **dict(fg="#ccc", bg="#111")).pack(side="left")
             e = tk.Entry(self.addr, bg="#222", fg="#eee",
@@ -176,6 +181,8 @@ class App:
             e.insert(0, "8080")
             e.pack(side="left", padx=6)
             self.hostentry = e
+        else:
+            self.addr.pack_forget()
 
     def logmsg(self, msg):
         self.log.configure(state="normal")
@@ -213,10 +220,46 @@ class App:
                 return
             t = threading.Thread(target=self._client, args=(host, port),
                                  daemon=True)
-        else:
+        elif self.mode.get() == "servidor":
             port = int(self.hostentry.get() or 8080)
             t = threading.Thread(target=self._server, args=(port,), daemon=True)
+        else:
+            t = threading.Thread(target=self._pc_gps, daemon=True)
         t.start()
+
+    def _pc_gps(self):
+        import subprocess
+        self.logmsg("Iniciando GPS nativo do Windows...")
+        self.set_status("Aguardando GPS do PC...", "#e90")
+        while not self.stop.is_set():
+            try:
+                cmd = [
+                    "powershell", "-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Device; "
+                    "$w = New-Object System.Device.Location.GeoCoordinateWatcher; "
+                    "$w.Start(); "
+                    "$timeout = 10; "
+                    "while($w.Status -ne 'Ready' -and $timeout -gt 0) { Start-Sleep -s 1; $timeout-- }; "
+                    "if($w.Status -eq 'Ready') { "
+                    "  $loc = $w.Position.Location; "
+                    "  if (-not $loc.IsUnknown) { "
+                    "    [PSCustomObject]@{Lat=$loc.Latitude; Lon=$loc.Longitude} | ConvertTo-Json -Compress "
+                    "  } "
+                    "}"
+                ]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                if res.returncode == 0 and res.stdout.strip():
+                    data = json.loads(res.stdout.strip())
+                    if "Lat" in data and "Lon" in data:
+                        lat, lon = float(data["Lat"]), float(data["Lon"])
+                        self.cur = (lat, lon)
+                        self.set_status("GPS do PC conectado", "#0e7")
+                        self.logmsg(f"GPS PC: {lat:.5f}, {lon:.5f}")
+                else:
+                    self.logmsg("Aviso: Localização do Windows indisponível ou desativada.")
+            except Exception as e:
+                self.logmsg(f"Erro GPS PC: {e}")
+            time.sleep(5)
 
     def _client(self, host, port):
         self.logmsg(f"Tentando conectar no celular {host}:{port} ...")
